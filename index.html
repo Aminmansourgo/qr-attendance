@@ -10,86 +10,241 @@
     body { font-family: 'Cairo', sans-serif; background: #f0f2f5; margin: 0; padding: 20px; text-align: center; }
     .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
     .header { background: linear-gradient(135deg, #1a237e, #283593); color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; }
-    select { padding: 10px; border-radius: 8px; border: 1px solid #ccc; width: 100%; margin-bottom: 10px; box-sizing: border-box; }
+    select { padding: 10px; border-radius: 8px; border: 1px solid #ccc; width: 100%; margin-bottom: 10px; box-sizing: border-box; font-family: 'Cairo'; }
     #reader { width: 100%; max-width: 400px; margin: 0 auto; border-radius: 10px; overflow: hidden; }
     #result { margin-top: 20px; padding: 15px; border-radius: 8px; display: none; font-weight: bold; }
-    .success { background: #d4edda; color: #155724; }
-    .error { background: #f8d7da; color: #721c24; }
-    .info { background: #d1ecf1; color: #0c5460; }
-    .btn { padding: 12px 30px; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin: 5px; width: 100%; box-sizing: border-box; }
+    .success { background: #d4edda; color: #155724; display: block; }
+    .error { background: #f8d7da; color: #721c24; display: block; }
+    .info { background: #d1ecf1; color: #0c5460; display: block; }
+    .btn { padding: 12px 30px; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin: 5px; width: 100%; box-sizing: border-box; font-family: 'Cairo'; }
     .btn-blue { background: #1a237e; color: white; font-weight: bold; }
+    .btn-green { background: #2e7d32; color: white; font-weight: bold; }
+    .btn-red { background: #c62828; color: white; font-weight: bold; }
+    .loading { color: #666; font-size: 14px; }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <div class="header"><h2>📷 تسجيل حضور الخدام</h2></div>
-  <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; margin-bottom: 15px;">
-    <select id="courseSelect" onchange="updateSessions()"><option>-- جاري تحميل الكورسات... --</option></select>
-    <select id="sessionSelect"><option>-- اختر المحاضرة --</option></select>
-    <button onclick="setCourseAndSession()" class="btn btn-blue">تأكيد واختيار الكورس</button>
+  <div class="header">
+    <h2>📷 تسجيل حضور الخدام</h2>
+    <small style="opacity:0.8;">امسح QR Code الخاص بالخادم لتسجيل حضوره</small>
   </div>
+  
+  <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; margin-bottom: 15px;">
+    <select id="courseSelect" onchange="updateSessions()">
+      <option value="">-- جاري تحميل الكورسات... --</option>
+    </select>
+    <select id="sessionSelect">
+      <option value="">-- اختر المحاضرة --</option>
+    </select>
+    <button onclick="setCourseAndSession()" class="btn btn-blue">✅ تأكيد الكورس والمحاضرة</button>
+  </div>
+  
   <div id="reader"></div>
-  <div id="result"></div>
+  <div id="result" style="display:none;"></div>
+  
+  <button onclick="restartScanner()" class="btn btn-green" style="display:none;" id="scanAgainBtn">🔄 مسح مرة أخرى</button>
+  <button onclick="window.location.href='https://script.google.com/macros/s/你的部署ID/exec?page=form'" class="btn btn-red">🏠 العودة للرئيسية</button>
 </div>
 
 <script>
-  // ضع رابط الـ Web App الثابت الخاص بك هنا:
-  const SCRIPT_URL = "ضع_الرابط_هنا";
+  // 🔥 ضع رابط الـ Web App الخاص بك هنا (بدون ?page=)
+  const SCRIPT_URL = "https://script.google.com/macros/s/你的部署ID/exec";
 
   var html5QrCode;
-  
+  var isScanning = false;
+  var selectedCourse = "";
+  var selectedSession = "";
+  var selectedTerm = "";
+  var coursesList = [];
+
+  // عند تحميل الصفحة، نجلب الكورسات
   window.onload = function() {
-    var script = document.createElement('script');
-    script.src = SCRIPT_URL + "?api=getCourses&callback=handleCourses";
-    document.body.appendChild(script);
+    loadCourses();
   };
 
-  function handleCourses(courses) {
-    var select = document.getElementById('courseSelect');
-    select.innerHTML = '<option value="">-- اختر الكورس --</option>';
-    courses.forEach(function(c) {
-      var opt = document.createElement('option');
-      opt.value = JSON.stringify({ course: c.course, term: c.term, max: c.sessionsCount });
-      opt.text = c.course + " (تيرم " + c.term + ")";
-      select.appendChild(opt);
-    });
+  // 🔥 دالة جلب الكورسات باستخدام fetch
+  function loadCourses() {
+    showResult("⏳ جاري تحميل الكورسات...", "info");
+    
+    fetch(SCRIPT_URL + "?action=getCourses")
+      .then(function(response) {
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status);
+        }
+        return response.json();
+      })
+      .then(function(data) {
+        console.log("البيانات المستلمة:", data);
+        
+        if (data.error) {
+          showResult("❌ " + data.error, "error");
+          return;
+        }
+        
+        if (!data || data.length === 0) {
+          showResult("⚠️ لا توجد كورسات. أضف كورسات أولاً من لوحة الإدارة.", "error");
+          return;
+        }
+        
+        coursesList = data;
+        var select = document.getElementById('courseSelect');
+        select.innerHTML = '<option value="">-- اختر الكورس --</option>';
+        
+        data.forEach(function(c, index) {
+          var opt = document.createElement('option');
+          opt.value = index;
+          opt.text = c.course + " (" + c.term + ")";
+          select.appendChild(opt);
+        });
+        
+        showResult("✅ تم تحميل " + data.length + " كورس", "success");
+      })
+      .catch(function(err) {
+        console.error("خطأ في جلب الكورسات:", err);
+        showResult("❌ تعذر جلب الكورسات: " + err.message + ". تأكد من رابط التطبيق.", "error");
+        document.getElementById('courseSelect').innerHTML = '<option value="">❌ خطأ في التحميل</option>';
+      });
   }
 
   function updateSessions() {
-    var d = document.getElementById('courseSelect').value;
-    var s = document.getElementById('sessionSelect');
-    s.innerHTML = '<option value="">-- اختر المحاضرة --</option>';
-    if (!d) return;
-    var max = parseInt(JSON.parse(d).max) || 12;
-    for (var i = 1; i <= max; i++) s.innerHTML += `<option value="${i}">المحاضرة ${i}</option>`;
+    var index = document.getElementById('courseSelect').value;
+    var sessionSelect = document.getElementById('sessionSelect');
+    sessionSelect.innerHTML = '<option value="">-- اختر المحاضرة --</option>';
+    
+    if (index === "" || !coursesList[index]) return;
+    
+    var course = coursesList[index];
+    var maxSessions = course.maxSessions || 12;
+    
+    for (var i = 1; i <= maxSessions; i++) {
+      var opt = document.createElement('option');
+      opt.value = i;
+      opt.text = "المحاضرة " + i;
+      sessionSelect.appendChild(opt);
+    }
   }
 
   function setCourseAndSession() {
-    var d = document.getElementById('courseSelect').value;
-    var s = document.getElementById('sessionSelect').value;
-    if (!d || !s) return;
-    showResult("✅ الكاميرا جاهزة.", "success");
-    startScanner(JSON.parse(d).course, s, JSON.parse(d).term);
+    var index = document.getElementById('courseSelect').value;
+    var session = document.getElementById('sessionSelect').value;
+    
+    if (index === "") {
+      showResult("⚠️ من فضلك اختر الكورس أولاً", "error");
+      return;
+    }
+    
+    if (session === "") {
+      showResult("⚠️ من فضلك اختر المحاضرة", "error");
+      return;
+    }
+    
+    var course = coursesList[index];
+    selectedCourse = course.course;
+    selectedTerm = course.term;
+    selectedSession = session;
+    
+    showResult("✅ تم تحديد: " + selectedCourse + " - محاضرة " + selectedSession, "success");
+    
+    // بدء الكاميرا
+    if (html5QrCode) {
+      html5QrCode.stop().then(function() {
+        startScanner();
+      }).catch(function() {
+        startScanner();
+      });
+    } else {
+      startScanner();
+    }
   }
 
-  function startScanner(c, s, t) {
+  function startScanner() {
+    if (isScanning) return;
+    
+    var readerElement = document.getElementById('reader');
+    readerElement.innerHTML = '';
+    
     html5QrCode = new Html5Qrcode("reader");
-    html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (text) => {
-      html5QrCode.stop();
-      showResult("⏳ جاري تسجيل الحضور...", "info");
-      var script = document.createElement('script');
-      script.src = SCRIPT_URL + "?api=scanQR&decodedText=" + encodeURIComponent(text) + 
-                   "&course=" + encodeURIComponent(c) + "&session=" + encodeURIComponent(s) + 
-                   "&term=" + encodeURIComponent(t) + "&callback=showRes";
-      document.body.appendChild(script);
+    
+    var config = {
+      fps: 10,
+      qrbox: { width: 250, height: 250 },
+      aspectRatio: 1.0
+    };
+    
+    html5QrCode.start(
+      { facingMode: "environment" },
+      config,
+      onScanSuccess,
+      onScanError
+    ).then(function() {
+      isScanning = true;
+      showResult("📷 الكاميرا جاهزة. امسح QR Code.", "info");
+    }).catch(function(err) {
+      showResult("❌ تعذر فتح الكاميرا: " + err, "error");
     });
   }
 
-  function showRes(res) { showResult(res.message, res.success ? "success" : "error"); }
-  function showResult(msg, type) {
-    var r = document.getElementById('result');
-    r.innerHTML = msg; r.className = type; r.style.display = 'block';
+  function onScanSuccess(decodedText, decodedResult) {
+    if (!isScanning) return;
+    if (!selectedCourse || !selectedSession) {
+      showResult("⚠️ من فضلك حدد الكورس والمحاضرة أولاً", "error");
+      return;
+    }
+    
+    // إيقاف المسح
+    html5QrCode.stop().then(function() {
+      isScanning = false;
+    });
+    
+    showResult("⏳ جاري تسجيل الحضور...", "info");
+    
+    // إرسال البيانات للسيرفر
+    var payload = {
+      action: "scanQR",
+      decodedText: decodedText,
+      course: selectedCourse,
+      session: selectedSession,
+      term: selectedTerm
+    };
+    
+    fetch(SCRIPT_URL + "?action=scanQR", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.success) {
+        showResult(data.message, "success");
+      } else {
+        showResult(data.message, "error");
+      }
+      document.getElementById('scanAgainBtn').style.display = 'block';
+    })
+    .catch(function(err) {
+      showResult("❌ خطأ في الاتصال: " + err.message, "error");
+      document.getElementById('scanAgainBtn').style.display = 'block';
+    });
+  }
+
+  function onScanError(error) {
+    // تجاهل
+  }
+
+  function restartScanner() {
+    document.getElementById('result').style.display = 'none';
+    document.getElementById('result').className = '';
+    document.getElementById('scanAgainBtn').style.display = 'none';
+    startScanner();
+  }
+
+  function showResult(message, type) {
+    var resultDiv = document.getElementById('result');
+    resultDiv.innerHTML = message;
+    resultDiv.className = type;
+    resultDiv.style.display = 'block';
   }
 </script>
 </body>
