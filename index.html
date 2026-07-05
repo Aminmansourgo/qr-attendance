@@ -49,7 +49,7 @@
 </div>
 
 <script>
-  // 🔥 تأكد تماماً من وضع رابط الـ Web App الأحدث (الذي حصلت عليه بعد آخر New Deployment) هنا:
+  // 🔥 ضع رابط جوجل الثابت الخاص بك هنا للمرة الأخيرة ولن تغيره مجدداً
   const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWrVwQRPtrQmcsGgz_IH8_eDeE-e_8hd0Ea3up4i9DCw4_lUfGS-8TSr0nHubI8lYJuw/exec";
 
   var html5QrCode;
@@ -58,33 +58,30 @@
   var selectedSession = "";
   var selectedTerm = "";
   
-  // تحميل الكورسات النشطة (تستبعد المنتهية تلقائياً بناءً على تاريخ اليوم في 2026)
+  // 1. جلب الكورسات النشطة عن طريق حقن السكريبت الآمن (JSONP) لتخطي حظر المتصفح (CORS)
   window.onload = function() {
-    fetch(SCRIPT_URL + "?api=getCourses")
-      .then(res => res.json())
-      .then(courses => {
-        var select = document.getElementById('courseSelect');
-        if (!courses || courses.length === 0) {
-          select.innerHTML = '<option value="">-- لا توجد كورسات نشطة حالياً --</option>';
-          return;
-        }
-        
-        select.innerHTML = '<option value="">-- اختر الكورس --</option>';
-        courses.forEach(function(c) {
-          var opt = document.createElement('option');
-          opt.value = JSON.stringify({ course: c.course, term: c.term, max: c.sessionsCount });
-          opt.text = c.course + " (تيرم " + c.term + ")";
-          select.appendChild(opt);
-        });
-      })
-      .catch(err => {
-        console.error("Error fetching courses:", err);
-        var select = document.getElementById('courseSelect');
-        select.innerHTML = '<option value="">⚠️ تعذر جلب الكورسات، شيك على الرابط</option>';
-      });
+    var script = document.createElement('script');
+    script.src = SCRIPT_URL + "?api=getCourses&callback=handleCoursesResponse";
+    document.body.appendChild(script);
   };
 
-  // تحديث أرقام المحاضرات بناءً على الكورس المختار
+  // الدالة المستقبلة لبيانات الكورسات
+  function handleCoursesResponse(courses) {
+    var select = document.getElementById('courseSelect');
+    if (!courses || courses.length === 0) {
+      select.innerHTML = '<option value="">-- لا توجد كورسات نشطة حالياً --</option>';
+      return;
+    }
+    
+    select.innerHTML = '<option value="">-- اختر الكورس --</option>';
+    courses.forEach(function(c) {
+      var opt = document.createElement('option');
+      opt.value = JSON.stringify({ course: c.course, term: c.term, max: c.sessionsCount });
+      opt.text = c.course + " (تيرم " + c.term + ")";
+      select.appendChild(opt);
+    });
+  }
+
   function updateSessions() {
     var courseData = document.getElementById('courseSelect').value;
     var sessionSelect = document.getElementById('sessionSelect');
@@ -99,7 +96,6 @@
     }
   }
 
-  // تأكيد تثبيت البيانات لبدء تشغيل الكاميرا
   function setCourseAndSession() {
     var courseData = document.getElementById('courseSelect').value;
     var session = document.getElementById('sessionSelect').value;
@@ -118,7 +114,6 @@
     if (!isScanning) startScanner();
   }
 
-  // تشغيل الكاميرا
   function startScanner() {
     if (isScanning) return;
     document.getElementById('reader').innerHTML = '';
@@ -136,7 +131,7 @@
     });
   }
 
-  // معالجة قراءة الـ QR بنجاح وإرسال البيانات للسيرفر
+  // 5. إرسال بيانات الحضور عبر السكريبت الآمن
   function onScanSuccess(decodedText, decodedResult) {
     if (!isScanning) return;
     if (!selectedCourse || !selectedSession) {
@@ -147,39 +142,36 @@
     stopScanner();
     showResult("⏳ جاري تسجيل الحضور وفحص وقت التأخير...", "info");
     
-    var url = `${SCRIPT_URL}?api=scanQR&decodedText=${encodeURIComponent(decodedText)}&course=${encodeURIComponent(selectedCourse)}&session=${encodeURIComponent(selectedSession)}&term=${encodeURIComponent(selectedTerm)}`;
-    
-    fetch(url)
-      .then(res => res.json())
-      .then(response => {
-        if (response.success) {
-          showResult(response.message, "success");
-        } else {
-          showResult(response.message, "error");
-        }
-        document.getElementById('scanAgain').style.display = 'block';
-      })
-      .catch(err => {
-        showResult("❌ خطأ في الاتصال بقاعدة البيانات", "error");
-        document.getElementById('scanAgain').style.display = 'block';
-      });
+    var script = document.createElement('script');
+    script.src = SCRIPT_URL + "?api=scanQR&decodedText=" + encodeURIComponent(decodedText) + 
+                 "&course=" + encodeURIComponent(selectedCourse) + 
+                 "&session=" + encodeURIComponent(selectedSession) + 
+                 "&term=" + encodeURIComponent(selectedTerm) + 
+                 "&callback=handleScanResponse";
+    document.body.appendChild(script);
   }
 
-  // إيقاف الكاميرا بشكل آمن
+  function handleScanResponse(response) {
+    if (response.success) {
+      showResult(response.message, "success");
+    } else {
+      showResult(response.message, "error");
+    }
+    document.getElementById('scanAgain').style.display = 'block';
+  }
+
   function stopScanner() {
     if (html5QrCode && isScanning) {
       html5QrCode.stop().then(() => isScanning = false).catch(err => console.log(err));
     }
   }
 
-  // إعادة مسح كود آخر
   function restartScanner() {
     document.getElementById('result').style.display = 'none';
     document.getElementById('scanAgain').style.display = 'none';
     startScanner();
   }
 
-  // طباعة النتيجة على الشاشة
   function showResult(message, type) {
     var resultDiv = document.getElementById('result');
     resultDiv.innerHTML = message;
