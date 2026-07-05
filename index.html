@@ -45,11 +45,11 @@
   <div id="result" style="display:none;"></div>
   
   <button onclick="restartScanner()" class="btn btn-green" style="display:none;" id="scanAgainBtn">🔄 مسح مرة أخرى</button>
-  <button onclick="window.location.href='https://script.google.com/macros/s/你的部署ID/exec?page=form'" class="btn btn-red">🏠 العودة للرئيسية</button>
+  <button onclick="window.location.href='https://script.google.com/macros/s/AKfycbyWrVwQRPtrQmcsGgz_IH8_eDeE-e_8hd0Ea3up4i9DCw4_lUfGS-8TSr0nHubI8lYJuw/exec?page=form'" class="btn btn-red">🏠 العودة للرئيسية</button>
 </div>
 
 <script>
-  // 🔥 ضع رابط الـ Web App الخاص بك هنا (بدون ?page=)
+  // الرابط الخاص بك مدمج وجاهز تماماً
   const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWrVwQRPtrQmcsGgz_IH8_eDeE-e_8hd0Ea3up4i9DCw4_lUfGS-8TSr0nHubI8lYJuw/exec";
 
   var html5QrCode;
@@ -59,53 +59,45 @@
   var selectedTerm = "";
   var coursesList = [];
 
-  // عند تحميل الصفحة، نجلب الكورسات
   window.onload = function() {
     loadCourses();
   };
 
-  // 🔥 دالة جلب الكورسات باستخدام fetch
+  // 1. جلب الكورسات باستخدام حقن السكريبت الآمن (JSONP) لكسر حظر CORS
   function loadCourses() {
     showResult("⏳ جاري تحميل الكورسات...", "info");
     
-    fetch(SCRIPT_URL + "?action=getCourses")
-      .then(function(response) {
-        if (!response.ok) {
-          throw new Error("HTTP " + response.status);
-        }
-        return response.json();
-      })
-      .then(function(data) {
-        console.log("البيانات المستلمة:", data);
-        
-        if (data.error) {
-          showResult("❌ " + data.error, "error");
-          return;
-        }
-        
-        if (!data || data.length === 0) {
-          showResult("⚠️ لا توجد كورسات. أضف كورسات أولاً من لوحة الإدارة.", "error");
-          return;
-        }
-        
-        coursesList = data;
-        var select = document.getElementById('courseSelect');
-        select.innerHTML = '<option value="">-- اختر الكورس --</option>';
-        
-        data.forEach(function(c, index) {
-          var opt = document.createElement('option');
-          opt.value = index;
-          opt.text = c.course + " (" + c.term + ")";
-          select.appendChild(opt);
-        });
-        
-        showResult("✅ تم تحميل " + data.length + " كورس", "success");
-      })
-      .catch(function(err) {
-        console.error("خطأ في جلب الكورسات:", err);
-        showResult("❌ تعذر جلب الكورسات: " + err.message + ". تأكد من رابط التطبيق.", "error");
-        document.getElementById('courseSelect').innerHTML = '<option value="">❌ خطأ في التحميل</option>';
-      });
+    var script = document.createElement('script');
+    script.src = SCRIPT_URL + "?api=getCourses&callback=handleCoursesResponse";
+    document.body.appendChild(script);
+  }
+
+  // الدالة المستقبلة لبيانات الكورسات ومعالجتها
+  function handleCoursesResponse(data) {
+    console.log("البيانات المستلمة الكورسات:", data);
+    
+    if (data.error) {
+      showResult("❌ " + data.error, "error");
+      return;
+    }
+    
+    if (!data || data.length === 0) {
+      showResult("⚠️ لا توجد كورسات نشطة حالياً في النظام.", "error");
+      return;
+    }
+    
+    coursesList = data;
+    var select = document.getElementById('courseSelect');
+    select.innerHTML = '<option value="">-- اختر الكورس --</option>';
+    
+    data.forEach(function(c, index) {
+      var opt = document.createElement('option');
+      opt.value = index;
+      opt.text = c.course + " (" + c.term + ")";
+      select.appendChild(opt);
+    });
+    
+    showResult("✅ تم تحميل " + data.length + " كورس بنجاح", "success");
   }
 
   function updateSessions() {
@@ -116,7 +108,7 @@
     if (index === "" || !coursesList[index]) return;
     
     var course = coursesList[index];
-    var maxSessions = course.maxSessions || 12;
+    var maxSessions = course.sessionsCount || 12;
     
     for (var i = 1; i <= maxSessions; i++) {
       var opt = document.createElement('option');
@@ -147,7 +139,6 @@
     
     showResult("✅ تم تحديد: " + selectedCourse + " - محاضرة " + selectedSession, "success");
     
-    // بدء الكاميرا
     if (html5QrCode) {
       html5QrCode.stop().then(function() {
         startScanner();
@@ -180,12 +171,13 @@
       onScanError
     ).then(function() {
       isScanning = true;
-      showResult("📷 الكاميرا جاهزة. امسح QR Code.", "info");
+      showResult("📷 الكاميرا جاهزة. امسح QR Code الخاص بالخادم.", "info");
     }).catch(function(err) {
       showResult("❌ تعذر فتح الكاميرا: " + err, "error");
     });
   }
 
+  // 2. إرسال بيانات الحضور للمتصفح عبر حقن السكريبت الآمن (JSONP) لتجنب حظر CORS تماماً
   function onScanSuccess(decodedText, decodedResult) {
     if (!isScanning) return;
     if (!selectedCourse || !selectedSession) {
@@ -193,44 +185,33 @@
       return;
     }
     
-    // إيقاف المسح
     html5QrCode.stop().then(function() {
       isScanning = false;
     });
     
-    showResult("⏳ جاري تسجيل الحضور...", "info");
+    showResult("⏳ جاري تسجيل الحضور وفحص التأخير المسموح...", "info");
     
-    // إرسال البيانات للسيرفر
-    var payload = {
-      action: "scanQR",
-      decodedText: decodedText,
-      course: selectedCourse,
-      session: selectedSession,
-      term: selectedTerm
-    };
-    
-    fetch(SCRIPT_URL + "?action=scanQR", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    })
-    .then(function(response) { return response.json(); })
-    .then(function(data) {
-      if (data.success) {
-        showResult(data.message, "success");
-      } else {
-        showResult(data.message, "error");
-      }
-      document.getElementById('scanAgainBtn').style.display = 'block';
-    })
-    .catch(function(err) {
-      showResult("❌ خطأ في الاتصال: " + err.message, "error");
-      document.getElementById('scanAgainBtn').style.display = 'block';
-    });
+    var script = document.createElement('script');
+    script.src = SCRIPT_URL + "?api=scanQR&decodedText=" + encodeURIComponent(decodedText) + 
+                 "&course=" + encodeURIComponent(selectedCourse) + 
+                 "&session=" + encodeURIComponent(selectedSession) + 
+                 "&term=" + encodeURIComponent(selectedTerm) + 
+                 "&callback=handleScanResponse";
+    document.body.appendChild(script);
+  }
+
+  // استقبال نتيجة الحضور وعرضها للمستخدم
+  function handleScanResponse(data) {
+    if (data.success) {
+      showResult(data.message, "success");
+    } else {
+      showResult(data.message, "error");
+    }
+    document.getElementById('scanAgainBtn').style.display = 'block';
   }
 
   function onScanError(error) {
-    // تجاهل
+    // تجاهل أخطاء الحركة العادية
   }
 
   function restartScanner() {
