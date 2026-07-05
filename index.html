@@ -49,7 +49,7 @@
 </div>
 
 <script>
-  // 🔥 ضع رابط الـ Web App الخاص بك (الإصدار الجديد) داخل علامتي التنصيص هنا:
+  // 🔥 ضع رابط الـ Web App الجديد الخاص بك (الذي ينتهي بـ /exec) هنا:
   const SCRIPT_URL = "رابط_جوجل_ويب_اب_الخاص_بك_هنا";
 
   var html5QrCode;
@@ -58,28 +58,38 @@
   var selectedSession = "";
   var selectedTerm = "";
   
+  // 1. جلب الكورسات النشطة عن طريق حقن السكريبت الآمن لتخطي حظر الـ CORS
   window.onload = function() {
-    // جلب الكورسات عبر الـ API
-    fetch(SCRIPT_URL + "?api=getCourses")
-      .then(res => res.json())
-      .then(courses => {
-        var select = document.getElementById('courseSelect');
-        select.innerHTML = '<option value="">-- اختر الكورس --</option>';
-        courses.forEach(function(c) {
-          var opt = document.createElement('option');
-          opt.value = JSON.stringify({ course: c.course, term: c.term, max: c.sessionsCount });
-          opt.text = c.course + " (تيرم " + c.term + ")";
-          select.appendChild(opt);
-        });
-      })
-      .catch(err => showResult("⚠️ تعذر جلب الكورسات، تأكد من الرابط", "error"));
+    var script = document.createElement('script');
+    script.src = SCRIPT_URL + "?api=getCourses&callback=handleCoursesResponse";
+    document.body.appendChild(script);
   };
 
+  // الدالة المستقبلة لبيانات الكورسات النشطة وتعبئة القائمة المنسدلة
+  function handleCoursesResponse(courses) {
+    var select = document.getElementById('courseSelect');
+    if (!courses || courses.length === 0) {
+      select.innerHTML = '<option value="">-- لا توجد كورسات نشطة حالياً --</option>';
+      return;
+    }
+    
+    select.innerHTML = '<option value="">-- اختر الكورس --</option>';
+    courses.forEach(function(c) {
+      var opt = document.createElement('option');
+      opt.value = JSON.stringify({ course: c.course, term: c.term, max: c.sessionsCount });
+      opt.text = c.course + " (تيرم " + c.term + ")";
+      select.appendChild(opt);
+    });
+  }
+
+  // 2. تحديث أرقام المحاضرات بناءً على الكورس المختار
   function updateSessions() {
     var courseData = document.getElementById('courseSelect').value;
     var sessionSelect = document.getElementById('sessionSelect');
     sessionSelect.innerHTML = '<option value="">-- اختر المحاضرة --</option>';
+    
     if (!courseData) return;
+    
     var parsed = JSON.parse(courseData);
     var max = parseInt(parsed.max) || 12;
     for (var i = 1; i <= max; i++) {
@@ -87,6 +97,7 @@
     }
   }
 
+  // 3. تأكيد تثبيت البيانات لبدء تشغيل الكاميرا
   function setCourseAndSession() {
     var courseData = document.getElementById('courseSelect').value;
     var session = document.getElementById('sessionSelect').value;
@@ -105,6 +116,7 @@
     if (!isScanning) startScanner();
   }
 
+  // 4. تشغيل الكاميرا
   function startScanner() {
     if (isScanning) return;
     document.getElementById('reader').innerHTML = '';
@@ -114,7 +126,7 @@
       { facingMode: "environment" },
       { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
       onScanSuccess,
-      function(error) { /* تجاهل أخطاء القراءة العادية */ }
+      function(error) { /* تجاهل أخطاء القراءة العادية الناتجة عن الحركة */ }
     ).then(function() {
       isScanning = true;
     }).catch(function(err) {
@@ -122,6 +134,7 @@
     });
   }
 
+  // 5. معالجة قراءة الـ QR بنجاح وإرسال البيانات عبر السكريبت الآمن لتخطي الحظر
   function onScanSuccess(decodedText, decodedResult) {
     if (!isScanning) return;
     if (!selectedCourse || !selectedSession) {
@@ -130,39 +143,43 @@
     }
     
     stopScanner();
-    showResult("⏳ جاري تسجيل الحضور...", "info");
+    showResult("⏳ جاري تسجيل الحضور وفحص وقت التأخير...", "info");
     
-    // إرسال البيانات لجوجل عبر الـ API
-    var url = `${SCRIPT_URL}?api=scanQR&decodedText=${encodeURIComponent(decodedText)}&course=${encodeURIComponent(selectedCourse)}&session=${encodeURIComponent(selectedSession)}&term=${encodeURIComponent(selectedTerm)}`;
-    
-    fetch(url)
-      .then(res => res.json())
-      .then(response => {
-        if (response.success) {
-          showResult(response.message, "success");
-        } else {
-          showResult(response.message, "error");
-        }
-        document.getElementById('scanAgain').style.display = 'block';
-      })
-      .catch(err => {
-        showResult("❌ خطأ في الاتصال بقاعدة البيانات", "error");
-        document.getElementById('scanAgain').style.display = 'block';
-      });
+    // حقن سكريبت الحضور لإرسال البيانات واستلام النتيجة بسلاسة تامة دون حظر CORS
+    var script = document.createElement('script');
+    script.src = SCRIPT_URL + "?api=scanQR&decodedText=" + encodeURIComponent(decodedText) + 
+                 "&course=" + encodeURIComponent(selectedCourse) + 
+                 "&session=" + encodeURIComponent(selectedSession) + 
+                 "&term=" + encodeURIComponent(selectedTerm) + 
+                 "&callback=handleScanResponse";
+    document.body.appendChild(script);
   }
 
+  // الدالة المستقبلة لنتيجة الحضور من السيرفر (سواء نجاح أو تأخير أو تكرار)
+  function handleScanResponse(response) {
+    if (response.success) {
+      showResult(response.message, "success");
+    } else {
+      showResult(response.message, "error");
+    }
+    document.getElementById('scanAgain').style.display = 'block';
+  }
+
+  // 6. إيقاف الكاميرا بشكل آمن
   function stopScanner() {
     if (html5QrCode && isScanning) {
       html5QrCode.stop().then(() => isScanning = false).catch(err => console.log(err));
     }
   }
 
+  // 7. إعادة مسح كود آخر
   function restartScanner() {
     document.getElementById('result').style.display = 'none';
     document.getElementById('scanAgain').style.display = 'none';
     startScanner();
   }
 
+  // 8. طباعة النتيجة على الشاشة للمستخدم
   function showResult(message, type) {
     var resultDiv = document.getElementById('result');
     resultDiv.innerHTML = message;
